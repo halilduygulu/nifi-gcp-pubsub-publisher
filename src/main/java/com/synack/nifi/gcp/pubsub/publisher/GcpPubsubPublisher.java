@@ -39,8 +39,8 @@ import org.apache.nifi.processor.util.StandardValidators;
  *
  * @author Mikhail Sosonkin
  */
-@Tags({"gcp", "pubsub", "consumer"})
-@CapabilityDescription("Consumer of GCP Pubsub topic")
+@Tags({"gcp", "pubsub", "publish"})
+@CapabilityDescription("Publish to a GCP Pubsub topic")
 @SeeAlso({})
 @ReadsAttributes({
     @ReadsAttribute(attribute = "", description = "")})
@@ -50,7 +50,7 @@ import org.apache.nifi.processor.util.StandardValidators;
 public class GcpPubsubPublisher extends AbstractProcessor {
 
     public static final PropertyDescriptor authProperty = new PropertyDescriptor.Builder().name("Authentication Keys")
-            .description("Required if outside of GCS. OAuth token (contents of myproject.json)")
+            .description("Required if outside of GCP. OAuth token (contents of myproject.json)")
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .sensitive(true)
             .build();
@@ -156,10 +156,23 @@ public class GcpPubsubPublisher extends AbstractProcessor {
             return;
         }
         
+        long totalSize = 0;
+        List<FlowFile> toProcess = new ArrayList<>(counts);
+        for(FlowFile flowFile : flowFiles) {
+            totalSize += flowFile.getSize();
+            
+            if(totalSize < 10 * 1024 * 1024) {
+                toProcess.add(flowFile);
+            } else {
+                // single publish request cannot exceed 10MB
+                break;
+            }
+        }
+        
         final List<Message> msgs = new ArrayList<>(counts);
         
         // obtain the contents
-        for(FlowFile flowFile : flowFiles) {
+        for(FlowFile flowFile : toProcess) {
             session.read(flowFile, new InputStreamCallback() {
                 @Override
                 public void process(InputStream in) throws IOException {
@@ -171,7 +184,7 @@ public class GcpPubsubPublisher extends AbstractProcessor {
         // upload the messages and clean up local flows.
         topic.publish(msgs);
         
-        for(FlowFile flowFile : flowFiles) {
+        for(FlowFile flowFile : toProcess) {
             session.remove(flowFile);
         }
         
