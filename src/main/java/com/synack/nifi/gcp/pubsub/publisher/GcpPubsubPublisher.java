@@ -161,7 +161,7 @@ public class GcpPubsubPublisher extends AbstractProcessor {
         for(FlowFile flowFile : flowFiles) {
             totalSize += flowFile.getSize();
             
-            if(totalSize < 10 * 1024 * 1024) {
+            if(totalSize < 9000000) {
                 toProcess.add(flowFile);
             } else {
                 // single publish request cannot exceed 10MB
