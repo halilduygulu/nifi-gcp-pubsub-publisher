@@ -111,7 +111,7 @@ public class GcpPubsubPublisher extends AbstractProcessor {
 
     @OnScheduled
     public void onScheduled(final ProcessContext context) {
-        if(pubsub == null) {
+        if(topic == null) {
             try {
                 PubSubOptions.Builder opts = PubSubOptions.newBuilder().setProjectId(context.getProperty(projectIdProperty).getValue());
                 
