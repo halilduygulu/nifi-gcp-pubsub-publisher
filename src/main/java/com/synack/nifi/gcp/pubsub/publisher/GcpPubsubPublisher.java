@@ -79,11 +79,17 @@ public class GcpPubsubPublisher extends AbstractProcessor {
             .description("FlowFiles that failed to be published")
             .build();
 
+    static final Relationship REL_TOOBIG = new Relationship.Builder()
+            .name("toobig")
+            .description("FlowFiles that are too big to be published")
+            .build();
+    
     private List<PropertyDescriptor> descriptors;
 
     private Set<Relationship> relationships;
     private PubSub pubsub;
     private Topic topic;
+    private static int MAX_FLOW_SIZE = 9000000;
     
     @Override
     protected void init(final ProcessorInitializationContext context) {
@@ -96,6 +102,7 @@ public class GcpPubsubPublisher extends AbstractProcessor {
 
         final Set<Relationship> relationships = new HashSet<Relationship>();
         relationships.add(REL_FAILURE);
+        relationships.add(REL_TOOBIG);
         this.relationships = Collections.unmodifiableSet(relationships);
     }
 
@@ -141,6 +148,8 @@ public class GcpPubsubPublisher extends AbstractProcessor {
 
     @Override
     public void onTrigger(final ProcessContext context, final ProcessSession session) throws ProcessException {
+        boolean doCommit = false;
+        
         if(pubsub == null || topic == null) {
             throw new ProcessException("Context not initialized");
         }
@@ -159,13 +168,18 @@ public class GcpPubsubPublisher extends AbstractProcessor {
         long totalSize = 0;
         List<FlowFile> toProcess = new ArrayList<>(counts);
         for(FlowFile flowFile : flowFiles) {
-            totalSize += flowFile.getSize();
-            
-            if(totalSize < 9000000) {
-                toProcess.add(flowFile);
+            if(flowFile.getSize() > MAX_FLOW_SIZE) {
+                doCommit = true;
+                session.transfer(flowFile, REL_TOOBIG);
             } else {
-                // single publish request cannot exceed 10MB
-                break;
+                totalSize += flowFile.getSize();
+
+                if(totalSize < MAX_FLOW_SIZE) {
+                    toProcess.add(flowFile);
+                } else {
+                    // single publish request cannot exceed 10MB
+                    break;
+                }
             }
         }
         
@@ -185,9 +199,12 @@ public class GcpPubsubPublisher extends AbstractProcessor {
         topic.publish(msgs);
         
         for(FlowFile flowFile : toProcess) {
+            doCommit = true;
             session.remove(flowFile);
         }
         
-        session.commit();
+        if(doCommit) {
+            session.commit();
+        }
     }
 }
