@@ -148,8 +148,6 @@ public class GcpPubsubPublisher extends AbstractProcessor {
 
     @Override
     public void onTrigger(final ProcessContext context, final ProcessSession session) throws ProcessException {
-        boolean doCommit = false;
-        
         if(pubsub == null || topic == null) {
             throw new ProcessException("Context not initialized");
         }
@@ -169,7 +167,6 @@ public class GcpPubsubPublisher extends AbstractProcessor {
         List<FlowFile> toProcess = new ArrayList<>(counts);
         for(FlowFile flowFile : flowFiles) {
             if(flowFile.getSize() > MAX_FLOW_SIZE) {
-                doCommit = true;
                 session.transfer(flowFile, REL_TOOBIG);
             } else {
                 totalSize += flowFile.getSize();
@@ -177,8 +174,7 @@ public class GcpPubsubPublisher extends AbstractProcessor {
                 if(totalSize < MAX_FLOW_SIZE) {
                     toProcess.add(flowFile);
                 } else {
-                    // single publish request cannot exceed 10MB
-                    break;
+                    session.transfer(flowFile);
                 }
             }
         }
@@ -199,12 +195,10 @@ public class GcpPubsubPublisher extends AbstractProcessor {
         topic.publish(msgs);
         
         for(FlowFile flowFile : toProcess) {
-            doCommit = true;
             session.remove(flowFile);
         }
         
-        if(doCommit) {
-            session.commit();
-        }
+        session.commit();
+        
     }
 }
